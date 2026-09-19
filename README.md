@@ -53,12 +53,14 @@ The repo intentionally keeps Google credentials out of the browser. It uses a Go
 9. Add to `.env.local`:
 
 ```env
+AUTH_USERNAME=your-private-username
+AUTH_PASSWORD=your-private-password
 GOOGLE_SHEET_ID=1V6nOlPEjoIVLC_Jc_Q-9lFYhsVX19EU_bRoQq5aF4mg
 GOOGLE_SHEETS_WEBAPP_URL=https://script.google.com/macros/s/...../exec
 TRACKER_API_TOKEN=the-same-long-secret
 ```
 
-The Apps Script still verifies the secret token on every read/write request. The secret remains server-side in Next.js.
+The login username/password are validated server-side against `AUTH_USERNAME` and `AUTH_PASSWORD`. After a successful login, this build stores the entered username and password in browser `localStorage` so the login persists on that device. The protected tracker API validates those credentials on every request. The Apps Script separately verifies `TRACKER_API_TOKEN` on Sheet read/write requests.
 
 ## Data flow
 
@@ -90,8 +92,8 @@ Spain Move Master Tracker Google Sheet
 
 ## Deployment
 
-The project is compatible with standard Next.js hosting such as Netlify or Vercel. Add the same three environment variables to the hosting provider before deploying.
+The project is compatible with standard Next.js hosting such as Netlify or Vercel. Add all five environment variables from `.env.example` to the hosting provider before deploying.
 
 ## Security
 
-Do not commit `.env.local` or the Apps Script token. The created Google Sheet should remain private to the Google account unless you deliberately share it.
+Do not commit `.env.local`, `AUTH_PASSWORD`, or the Apps Script token. The created Google Sheet should remain private to the Google account unless you deliberately share it. This build intentionally stores the entered username/password in browser `localStorage` as requested; that is convenient but less secure than an HttpOnly cookie/session because JavaScript running on the site can read localStorage.
