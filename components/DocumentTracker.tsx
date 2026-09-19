@@ -73,7 +73,7 @@ export default function DocumentTracker() {
     try {
       const response = await fetch("/api/tracker", {
         cache: "no-store",
-        headers: { Authorization: getStoredAuthHeader() },
+        headers: { "X-Tracker-Auth": getStoredAuthHeader() },
       });
       const json = await response.json();
       if (!response.ok || json.error) {
@@ -108,7 +108,7 @@ export default function DocumentTracker() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: getStoredAuthHeader(),
+          "X-Tracker-Auth": getStoredAuthHeader(),
         },
         body: JSON.stringify({ action: "updateItem", id, patch }),
       });
