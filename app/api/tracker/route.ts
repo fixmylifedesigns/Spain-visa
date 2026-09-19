@@ -8,20 +8,80 @@ function configured() {
   return Boolean(webAppUrl && token);
 }
 
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+function trackerUnauthorized() {
+  return NextResponse.json(
+    {
+      error:
+        "Website login authentication failed for /api/tracker. Log out and sign in again after the latest deploy.",
+      source: "tracker-auth",
+    },
+    { status: 401 }
+  );
+}
+
+function sheetsNotConfigured() {
+  return NextResponse.json(
+    {
+      error:
+        "Google Sheets sync is not configured. GOOGLE_SHEETS_WEBAPP_URL and TRACKER_API_TOKEN must both be set in Netlify.",
+      source: "tracker-config",
+    },
+    { status: 503 }
+  );
+}
+
+function parseAppsScriptResponse(text: string, status: number) {
+  let parsed: any;
+
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return NextResponse.json(
+      {
+        error: "Google Apps Script returned an invalid response.",
+        detail: text.slice(0, 500),
+        source: "apps-script",
+      },
+      { status: status >= 400 ? status : 502 }
+    );
+  }
+
+  if (parsed?.error) {
+    const message =
+      String(parsed.error).toLowerCase() === "unauthorized"
+        ? "Google Apps Script rejected TRACKER_API_TOKEN. Make sure the Script Property named TRACKER_API_TOKEN exactly matches the TRACKER_API_TOKEN value in Netlify, then redeploy the Apps Script if needed."
+        : String(parsed.error);
+
+    return NextResponse.json(
+      {
+        error: message,
+        source: "apps-script",
+      },
+      { status: status >= 400 ? status : 502 }
+    );
+  }
+
+  if (status >= 400) {
+    return NextResponse.json(
+      {
+        error: "Google Apps Script request failed.",
+        detail: parsed,
+        source: "apps-script",
+      },
+      { status }
+    );
+  }
+
+  return NextResponse.json(parsed);
 }
 
 export async function GET(req: NextRequest) {
   if (!requestIsAuthenticated(req)) {
-    return unauthorized();
+    return trackerUnauthorized();
   }
 
   if (!configured()) {
-    return NextResponse.json(
-      { error: "Google Sheets sync is not configured. See README.md and .env.example." },
-      { status: 503 }
-    );
+    return sheetsNotConfigured();
   }
 
   const url = new URL(webAppUrl!);
@@ -30,27 +90,16 @@ export async function GET(req: NextRequest) {
   const response = await fetch(url, { cache: "no-store" });
   const text = await response.text();
 
-  if (!response.ok) {
-    return NextResponse.json({ error: text }, { status: response.status });
-  }
-
-  try {
-    return NextResponse.json(JSON.parse(text));
-  } catch {
-    return NextResponse.json({ error: text }, { status: 502 });
-  }
+  return parseAppsScriptResponse(text, response.status);
 }
 
 export async function PUT(req: NextRequest) {
   if (!requestIsAuthenticated(req)) {
-    return unauthorized();
+    return trackerUnauthorized();
   }
 
   if (!configured()) {
-    return NextResponse.json(
-      { error: "Google Sheets sync is not configured. See README.md and .env.example." },
-      { status: 503 }
-    );
+    return sheetsNotConfigured();
   }
 
   const body = await req.json();
@@ -64,13 +113,5 @@ export async function PUT(req: NextRequest) {
 
   const text = await response.text();
 
-  if (!response.ok) {
-    return NextResponse.json({ error: text }, { status: response.status });
-  }
-
-  try {
-    return NextResponse.json(JSON.parse(text));
-  } catch {
-    return NextResponse.json({ error: text }, { status: 502 });
-  }
+  return parseAppsScriptResponse(text, response.status);
 }
