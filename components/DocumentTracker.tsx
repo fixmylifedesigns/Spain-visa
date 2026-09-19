@@ -12,6 +12,7 @@ import {
   Sheet,
 } from "lucide-react";
 import type { ChecklistItem, DocumentStatus, TrackerPayload } from "@/data/types";
+import { getStoredAuthHeader } from "@/components/AuthGate";
 
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1V6nOlPEjoIVLC_Jc_Q-9lFYhsVX19EU_bRoQq5aF4mg/edit";
@@ -70,7 +71,10 @@ export default function DocumentTracker() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/tracker", { cache: "no-store" });
+      const response = await fetch("/api/tracker", {
+        cache: "no-store",
+        headers: { Authorization: getStoredAuthHeader() },
+      });
       const json = await response.json();
       if (!response.ok || json.error) {
         throw new Error(json.error || "Unable to load tracker.");
@@ -102,7 +106,10 @@ export default function DocumentTracker() {
     try {
       const response = await fetch("/api/tracker", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: getStoredAuthHeader(),
+        },
         body: JSON.stringify({ action: "updateItem", id, patch }),
       });
       const json = await response.json();
