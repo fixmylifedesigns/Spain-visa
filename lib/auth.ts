@@ -23,14 +23,14 @@ export function validCredentials(username: string, password: string) {
 }
 
 export function requestIsAuthenticated(req: NextRequest) {
-  const header = req.headers.get("authorization");
+  const header = req.headers.get("x-tracker-auth");
 
-  if (!header || !header.startsWith("Basic ")) {
+  if (!header) {
     return false;
   }
 
   try {
-    const decoded = Buffer.from(header.slice(6), "base64").toString("utf8");
+    const decoded = Buffer.from(header, "base64").toString("utf8");
     const separator = decoded.indexOf(":");
 
     if (separator === -1) {
