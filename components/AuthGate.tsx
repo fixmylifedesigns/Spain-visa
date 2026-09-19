@@ -6,8 +6,8 @@ import { LockKeyhole, LogOut } from "lucide-react";
 const USERNAME_KEY = "spain-visa:username";
 const PASSWORD_KEY = "spain-visa:password";
 
-function basicAuth(username: string, password: string) {
-  return "Basic " + btoa(unescape(encodeURIComponent(username + ":" + password)));
+function encodeAuth(username: string, password: string) {
+  return btoa(unescape(encodeURIComponent(username + ":" + password)));
 }
 
 export function getStoredAuthHeader() {
@@ -18,7 +18,7 @@ export function getStoredAuthHeader() {
 
   if (!username || !password) return "";
 
-  return basicAuth(username, password);
+  return encodeAuth(username, password);
 }
 
 export default function AuthGate({ children }: { children: ReactNode }) {
