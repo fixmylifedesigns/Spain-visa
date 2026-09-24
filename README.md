@@ -1,99 +1,34 @@
-# Spain Move Master Tracker
+# Irving & Moeno · Spain hub (dev branch)
 
-A Next.js tracker for Irving and Moeno's Spain relocation plan. The Google Sheet is the source of truth and the web app reads/writes checklist status and notes through a small Google Apps Script bridge.
+One place for our Spain move, with an EN / 日本語 toggle on every page:
 
-## Included workflows
+- **Game plan**: Málaga for the DNV filing, Madrid for the TIE, Valencia for home
+- **Checklist**: every item from the Google Sheet, grouped by workflow
+- **California partnership**: why we use a California registered domestic partnership instead of a Spanish pareja de hecho
+- **N26**: our Spanish bank account and what to update after the move
+- **Mui**: bringing Mui from Japan to Spain, with her rows from the Google Sheet
+- **Valencia homes**: the dog-friendly flat shortlist (reads live from the `valencia-home` repo)
+- **Videos**: Valencia life in English plus Japanese vlogs
 
-- Spain Digital Nomad Visa (W-2 / posted-worker structure)
-- California registered domestic partnership
-- Moeno's DNV family-member application
-- Spain arrival: housing, padrón, TIE
-- Spain/U.S. tax and social-security setup
-- Mui's move from Japan to Spain
-- Two-year citizenship preparation using Dominican nationality
-- NY → Dominican Republic licence planning and DGT risk check
+## How the dev branch differs from main
 
-## Google Sheet
+This branch is a **static** Next.js site (`output: "export"`, code in `src/`) so it can run on GitHub Pages instead of Netlify.
 
-Created sheet ID:
+- The login and live Google Sheet sync need a server, so they are not on this branch. They still live on `main`. Don't merge `dev` into `main` without deciding how to keep them.
+- The checklist is a snapshot in `src/data/checklist.json`. The Google Sheet stays the place to update statuses; refresh the snapshot when things change.
+- Valencia listings come from `fixmylifedesigns/valencia-home/data/listings.json`, so edits there show up here within 5 minutes.
 
-`1V6nOlPEjoIVLC_Jc_Q-9lFYhsVX19EU_bRoQq5aF4mg`
+## Deploy
 
-Tabs:
+Every push to `dev` runs `.github/workflows/deploy-dev.yml`, builds the site and publishes it to the `gh-pages` branch.
 
-- `Checklist` — primary source of truth used by the app
-- `Timeline` — lead-time windows and sequencing
-- `Sources` — official/reference URLs
-- `Warnings` — legal/process risks to keep visible
-- `Settings` — app/case configuration
-- `Uploads` — metadata for Drive documents linked to checklist items
+One-time setup: **Settings → Pages → Source: Deploy from a branch → `gh-pages` / root**.
 
-## Local setup
+Note: GitHub Pages on a **private** repo needs a paid GitHub plan, and the published site itself is public. The pages are marked `noindex`, but anyone with the link can open them.
+
+## Local development
 
 ```bash
 npm install
-cp .env.example .env.local
 npm run dev
 ```
-
-## Connect the Sheet to the app
-
-The repo intentionally keeps Google credentials out of the browser. It uses a Google Apps Script Web App as a thin authenticated bridge.
-
-1. Open the Google Sheet.
-2. Choose **Extensions → Apps Script**.
-3. Replace the default script with `scripts/google-apps-script.gs`.
-4. In **Project Settings → Script Properties**, add:
-   - key: `TRACKER_API_TOKEN`
-   - value: a long random secret
-5. Choose **Deploy → New deployment → Web app**.
-6. Execute as: **Me**.
-7. Access: **Anyone with the link**.
-8. Copy the deployment `/exec` URL.
-9. Add to `.env.local`:
-
-```env
-AUTH_USERNAME=your-private-username
-AUTH_PASSWORD=your-private-password
-GOOGLE_SHEET_ID=1V6nOlPEjoIVLC_Jc_Q-9lFYhsVX19EU_bRoQq5aF4mg
-GOOGLE_SHEETS_WEBAPP_URL=https://script.google.com/macros/s/...../exec
-TRACKER_API_TOKEN=the-same-long-secret
-```
-
-The login username/password are validated server-side against `AUTH_USERNAME` and `AUTH_PASSWORD`. After a successful login, this build stores the entered username and password in browser `localStorage` so the login persists on that device. The protected tracker API validates those credentials on every request. The Apps Script separately verifies `TRACKER_API_TOKEN` on Sheet read/write requests.
-
-## Data flow
-
-```text
-Browser
-  ↓ /api/tracker
-Next.js server route
-  ↓ token-protected request
-Google Apps Script Web App
-  ↓
-Spain Move Master Tracker Google Sheet
-```
-
-## App behavior
-
-- Reads the full `Checklist`, `Timeline`, `Sources`, `Warnings`, `Settings`, and `Uploads` tabs.
-- Changing a status writes directly back to the `Checklist` tab.
-- Notes are saved when the notes field loses focus.
-- The Google Sheet can also be edited directly; use **Refresh from Sheet** in the app to reload it.
-- JSON export remains available as a backup/snapshot.
-
-## Important legal-design decisions in this build
-
-- California domestic partnership is the **primary relationship-document route** for Moeno.
-- The older plan to first register a Spanish `pareja de hecho` is not the default route anymore.
-- The W-2 DNV workflow treats Irving as a **U.S. employee temporarily posted/assigned to Spain**, with the SSA Certificate of Coverage and a lawyer-reviewed employer posting letter as critical-path items.
-- Citizenship is tracked separately from tax residence; travel/absence history and proof of continuous legal residence are preserved from day one.
-- The DR → Spain driving-licence strategy is explicitly flagged as high risk until the DGT confirms treatment of a Dominican licence obtained by exchange from New York.
-
-## Deployment
-
-The project is compatible with standard Next.js hosting such as Netlify or Vercel. Add all five environment variables from `.env.example` to the hosting provider before deploying.
-
-## Security
-
-Do not commit `.env.local`, `AUTH_PASSWORD`, or the Apps Script token. The created Google Sheet should remain private to the Google account unless you deliberately share it. This build intentionally stores the entered username/password in browser `localStorage` as requested; that is convenient but less secure than an HttpOnly cookie/session because JavaScript running on the site can read localStorage.
