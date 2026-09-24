@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ChevronDown, ChevronRight, Download, ExternalLink,
-  Lock, LogOut, RefreshCw, Search, Sheet,
+  RefreshCw, Search, Sheet,
 } from "lucide-react";
 import { useLang, type Bi } from "@/components/Lang";
 import { SHEET_URL, WORKFLOWS } from "@/components/Checklist";
+import { useAuth } from "@/components/AuthGate";
 import {
-  clearCreds, defaultUrl, getCreds, loadTracker, saveCreds, updateTracker,
-  type ChecklistItem, type Creds, type DocumentStatus, type TrackerPayload,
+  loadTracker, updateTracker,
+  type ChecklistItem, type DocumentStatus, type TrackerPayload,
 } from "@/lib/sheets";
 
 const STATUS_LABEL: Record<DocumentStatus, Bi> = {
@@ -41,61 +42,9 @@ function isRequired(value: string | boolean) {
   return value === true || String(value).toLowerCase() === "true";
 }
 
-function Unlock({ onUnlock }: { onUnlock: (c: Creds) => void }) {
-  const { t } = useLang();
-  const [url, setUrl] = useState(defaultUrl);
-  const [token, setToken] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function submit() {
-    const c = { url: url.trim(), token: token.trim() };
-    if (!c.url || !c.token) return;
-    setBusy(true);
-    setError("");
-    try {
-      await loadTracker(c);
-      saveCreds(c);
-      onUnlock(c);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
-      setError(
-        msg === "unauthorized"
-          ? t({ en: "That token doesn't match TRACKER_API_TOKEN in the Apps Script.", ja: "トークンがApps ScriptのTRACKER_API_TOKENと一致しません。" })
-          : t({ en: "Couldn't reach the Apps Script. Check the /exec URL.", ja: "Apps Scriptに接続できません。/exec のURLを確認してください。" })
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="mx-auto max-w-md rounded border border-stone-200 bg-white p-6">
-      <Lock className="h-5 w-5 text-stone-500" />
-      <h2 className="mt-2 font-serif text-xl font-semibold text-stone-900">{t({ en: "Unlock the tracker", ja: "トラッカーのロックを解除" })}</h2>
-      <p className="mt-1 text-sm text-stone-600">
-        {t({ en: "Enter the Apps Script token to read and edit the Google Sheet. It's saved on this device only.", ja: "Googleスプレッドシートを閲覧・編集するにはApps Scriptのトークンを入力してください。この端末にのみ保存されます。" })}
-      </p>
-      {!defaultUrl && (
-        <>
-          <label className="mb-1 mt-4 block text-xs font-medium text-stone-500">{t({ en: "Apps Script web-app URL (ends in /exec)", ja: "Apps ScriptのウェブアプリURL（/exec で終わる）" })}</label>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" className="w-full rounded border border-stone-300 px-3 py-2 text-sm" />
-        </>
-      )}
-      <label className="mb-1 mt-4 block text-xs font-medium text-stone-500">{t({ en: "Token", ja: "トークン" })}</label>
-      <input type="password" value={token} onChange={(e) => setToken(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} className="w-full rounded border border-stone-300 px-3 py-2 text-sm" />
-      {error && <p className="mt-3 text-sm text-red-800">{error}</p>}
-      <button onClick={submit} disabled={busy} className="mt-4 w-full rounded bg-stone-800 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
-        {busy ? t({ en: "Checking…", ja: "確認中…" }) : t({ en: "Unlock", ja: "解除する" })}
-      </button>
-    </section>
-  );
-}
-
 export default function DocumentTracker() {
   const { t } = useLang();
-  const [creds, setCreds] = useState<Creds | null>(null);
-  const [ready, setReady] = useState(false);
+  const { creds, logout } = useAuth();
   const [data, setData] = useState<TrackerPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -109,19 +58,13 @@ export default function DocumentTracker() {
   const [showWarnings, setShowWarnings] = useState(true);
   const [showSources, setShowSources] = useState(false);
 
-  useEffect(() => {
-    setCreds(getCreds());
-    setReady(true);
-  }, []);
-
-  async function load(c = creds) {
-    if (!c) return;
+  async function load() {
     setLoading(true);
     setError("");
     try {
-      setData(await loadTracker(c));
+      setData(await loadTracker(creds));
     } catch (err) {
-      if (err instanceof Error && err.message === "unauthorized") return lock();
+      if (err instanceof Error && err.message === "unauthorized") return logout();
       setError(err instanceof Error ? err.message : "Unable to load tracker.");
     } finally {
       setLoading(false);
@@ -129,17 +72,12 @@ export default function DocumentTracker() {
   }
 
   useEffect(() => {
-    if (creds) load(creds);
-  }, [creds]);
-
-  function lock() {
-    clearCreds();
-    setCreds(null);
-    setData(null);
-  }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function updateItem(id: string, patch: Partial<ChecklistItem>) {
-    if (!data || !creds) return;
+    if (!data) return;
     const previous = data;
     setSaving(id);
     setData({ ...data, checklist: data.checklist.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
@@ -206,15 +144,9 @@ export default function DocumentTracker() {
               {t({ en: "Open Google Sheet", ja: "Googleスプレッドシートを開く" })}
               <ExternalLink className="h-3 w-3" />
             </a>
-            {creds && (
-              <button onClick={lock} className="inline-flex items-center gap-2 rounded border border-stone-300 bg-white px-3 py-2 text-xs font-medium">
-                <LogOut className="h-3.5 w-3.5" /> {t({ en: "Lock", ja: "ロック" })}
-              </button>
-            )}
           </div>
         </div>
 
-        {creds && (
           <div className="mt-5 flex items-end gap-3">
             <div className="flex-1">
               <div className="mb-1 flex justify-between text-xs text-stone-500">
@@ -230,12 +162,8 @@ export default function DocumentTracker() {
               {t({ en: "Refresh", ja: "更新" })}
             </button>
           </div>
-        )}
       </header>
 
-      {ready && !creds && <Unlock onUnlock={setCreds} />}
-
-      {creds && (
         <>
           {error && (
             <div className="mb-5 rounded border border-red-300 bg-red-50 p-4 text-sm text-red-900">
@@ -435,7 +363,6 @@ export default function DocumentTracker() {
             </button>
           </div>
         </>
-      )}
     </div>
   );
 }
