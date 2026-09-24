@@ -3,7 +3,7 @@
 import { createContext, FormEvent, ReactNode, useContext, useEffect, useState } from "react";
 import { LockKeyhole } from "lucide-react";
 import { LangToggle, useLang } from "@/components/Lang";
-import { loadTracker, SHEETS_URL, type Creds } from "@/lib/sheets";
+import { login, type Creds } from "@/lib/sheets";
 
 // Same keys as the original Netlify AuthGate, so a saved login keeps working.
 const USERNAME_KEY = "spain-visa:username";
@@ -29,9 +29,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   function message(err: unknown) {
     const msg = err instanceof Error ? err.message : "";
     if (msg === "unauthorized") return t({ en: "Wrong username or password.", ja: "ユーザー名またはパスワードが違います。" });
-    if (msg === "not-configured")
-      return t({ en: "The site isn't connected to the Google Sheet yet (SHEETS_WEBAPP_URL is missing).", ja: "サイトがまだGoogleスプレッドシートに接続されていません（SHEETS_WEBAPP_URL が未設定）。" });
-    return t({ en: "Couldn't reach the Google Sheet. Try again.", ja: "Googleスプレッドシートに接続できませんでした。もう一度お試しください。" });
+    return msg || t({ en: "Login failed.", ja: "ログインに失敗しました。" });
   }
 
   useEffect(() => {
@@ -47,7 +45,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     setPassword(savedPassword);
 
     const saved = { username: savedUsername, password: savedPassword };
-    loadTracker(saved)
+    login(saved)
       .then(() => setCreds(saved))
       .catch((err) => {
         if (err instanceof Error && err.message === "unauthorized") {
@@ -68,7 +66,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
     try {
       const next = { username: username.trim(), password };
-      await loadTracker(next);
+      await login(next);
       window.localStorage.setItem(USERNAME_KEY, next.username);
       window.localStorage.setItem(PASSWORD_KEY, next.password);
       setCreds(next);
@@ -136,7 +134,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
           <button
             type="submit"
-            disabled={submitting || !SHEETS_URL}
+            disabled={submitting}
             className="mt-5 w-full rounded bg-stone-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60"
           >
             {submitting ? t({ en: "Signing in…", ja: "サインイン中…" }) : t({ en: "Sign in", ja: "サインイン" })}

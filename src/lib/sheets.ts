@@ -1,6 +1,6 @@
-// Talks straight to the Google Apps Script bridge (scripts/google-apps-script.gs).
-// The script checks the website login (AUTH_USERNAME / AUTH_PASSWORD script properties)
-// on every read and write, which replaces the old Netlify /api/auth + /api/tracker routes.
+// Client side of the original Netlify setup: the browser only talks to our own
+// /api/auth and /api/tracker routes. The server checks AUTH_USERNAME / AUTH_PASSWORD
+// and holds GOOGLE_SHEETS_WEBAPP_URL + TRACKER_API_TOKEN (see src/app/api/*).
 
 export type DocumentStatus =
   | "not-started" | "requested" | "received" | "apostille-pending"
@@ -32,27 +32,38 @@ export type TrackerPayload = {
   uploads: Record<string, string>[];
 };
 
-export const SHEETS_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
-
 export type Creds = { username: string; password: string };
 
-async function call(c: Creds, body: Record<string, unknown>) {
-  if (!SHEETS_URL) throw new Error("not-configured");
-  // text/plain keeps this a "simple" request, so the browser doesn't need a CORS preflight.
-  const res = await fetch(SHEETS_URL, {
+function authHeader(c: Creds) {
+  return btoa(unescape(encodeURIComponent(c.username + ":" + c.password)));
+}
+
+// Checks the login against the .env credentials on the server. No Google call.
+export async function login(c: Creds) {
+  const res = await fetch("/api/auth", {
     method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ ...body, username: c.username, password: c.password }),
-    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(c),
   });
-  const text = await res.text();
-  let json: any;
-  try { json = JSON.parse(text); } catch { throw new Error("Google Apps Script returned an invalid response."); }
-  if (json?.error) {
-    throw new Error(String(json.error).toLowerCase() === "unauthorized" ? "unauthorized" : String(json.error));
-  }
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new Error("unauthorized");
+  if (!res.ok) throw new Error(json.error || "Login failed.");
+  return true;
+}
+
+async function tracker(c: Creds, init: RequestInit = {}) {
+  const res = await fetch("/api/tracker", {
+    cache: "no-store",
+    ...init,
+    headers: { ...(init.headers || {}), "X-Tracker-Auth": authHeader(c) },
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401 && json.source === "tracker-auth") throw new Error("unauthorized");
+  if (!res.ok || json.error) throw new Error(json.error || "Unable to load tracker.");
   return json;
 }
 
-export const loadTracker = (c: Creds): Promise<TrackerPayload> => call(c, { action: "read" });
-export const updateTracker = (c: Creds, body: Record<string, unknown>) => call(c, body);
+export const loadTracker = (c: Creds): Promise<TrackerPayload> => tracker(c);
+
+export const updateTracker = (c: Creds, body: Record<string, unknown>) =>
+  tracker(c, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
