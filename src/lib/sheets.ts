@@ -1,6 +1,6 @@
 // Talks straight to the Google Apps Script bridge (scripts/google-apps-script.gs).
-// The script checks TRACKER_API_TOKEN on every read and write, so no server is needed:
-// the token is typed in once and kept only in this browser.
+// The script checks the website login (AUTH_USERNAME / AUTH_PASSWORD script properties)
+// on every read and write, which replaces the old Netlify /api/auth + /api/tracker routes.
 
 export type DocumentStatus =
   | "not-started" | "requested" | "received" | "apostille-pending"
@@ -32,48 +32,27 @@ export type TrackerPayload = {
   uploads: Record<string, string>[];
 };
 
-const KEY = "hub-sheets";
-const DEFAULT_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
+export const SHEETS_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
 
-export type Creds = { url: string; token: string };
+export type Creds = { username: string; password: string };
 
-export function getCreds(): Creds | null {
-  try {
-    const c = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (c?.token && (c.url || DEFAULT_URL)) return { url: c.url || DEFAULT_URL, token: c.token };
-  } catch {}
-  return null;
-}
-export function saveCreds(c: Creds) {
-  try { localStorage.setItem(KEY, JSON.stringify(c)); } catch {}
-}
-export function clearCreds() {
-  try { localStorage.removeItem(KEY); } catch {}
-}
-export const defaultUrl = DEFAULT_URL;
-
-async function parse(res: Response) {
+async function call(c: Creds, body: Record<string, unknown>) {
+  if (!SHEETS_URL) throw new Error("not-configured");
+  // text/plain keeps this a "simple" request, so the browser doesn't need a CORS preflight.
+  const res = await fetch(SHEETS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ ...body, username: c.username, password: c.password }),
+    cache: "no-store",
+  });
   const text = await res.text();
   let json: any;
-  try { json = JSON.parse(text); } catch { throw new Error("Google Apps Script returned an invalid response. Check the /exec URL."); }
+  try { json = JSON.parse(text); } catch { throw new Error("Google Apps Script returned an invalid response."); }
   if (json?.error) {
     throw new Error(String(json.error).toLowerCase() === "unauthorized" ? "unauthorized" : String(json.error));
   }
   return json;
 }
 
-export async function loadTracker(c: Creds): Promise<TrackerPayload> {
-  const url = new URL(c.url);
-  url.searchParams.set("token", c.token);
-  return parse(await fetch(url, { cache: "no-store" }));
-}
-
-// text/plain keeps this a "simple" request, so the browser doesn't need a CORS preflight.
-export async function updateTracker(c: Creds, body: Record<string, unknown>) {
-  return parse(await fetch(c.url, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ ...body, token: c.token }),
-    cache: "no-store",
-  }));
-}
+export const loadTracker = (c: Creds): Promise<TrackerPayload> => call(c, { action: "read" });
+export const updateTracker = (c: Creds, body: Record<string, unknown>) => call(c, body);

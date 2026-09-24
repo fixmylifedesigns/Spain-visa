@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { LangProvider } from "@/components/Lang";
+import AuthGate from "@/components/AuthGate";
 import Nav from "@/components/Nav";
 import { Footer } from "@/components/Page";
 
@@ -17,11 +18,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body className="min-h-screen bg-[#f7f4ec] text-stone-800" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <LangProvider>
-          <Nav />
-          <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-            {children}
-            <Footer />
-          </main>
+          <AuthGate>
+            <Nav />
+            <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+              {children}
+              <Footer />
+            </main>
+          </AuthGate>
         </LangProvider>
       </body>
     </html>

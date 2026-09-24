@@ -4,10 +4,13 @@
  * 1. Open the Google Sheet.
  * 2. Extensions > Apps Script.
  * 3. Replace the default script with this file.
- * 4. Project Settings > Script Properties > add TRACKER_API_TOKEN.
- * 5. Deploy > New deployment > Web app.
- * 6. Execute as: Me. Who has access: Anyone with the link.
- * 7. Put the /exec URL in GOOGLE_SHEETS_WEBAPP_URL in the Next.js app.
+ * 4. Project Settings > Script Properties > add:
+ *      AUTH_USERNAME, AUTH_PASSWORD   (the website login, same values as before in Netlify)
+ *      TRACKER_API_TOKEN              (optional; still accepted)
+ * 5. Deploy > Manage deployments > edit the existing Web app > Version: New version > Deploy.
+ *    (Editing the existing deployment keeps the same /exec URL.)
+ *    Execute as: Me. Who has access: Anyone.
+ * 6. The /exec URL goes in the GitHub repo variable SHEETS_WEBAPP_URL.
  */
 
 const SHEETS = ["Checklist", "Timeline", "Sources", "Warnings", "Settings", "Uploads"];
@@ -17,9 +20,15 @@ function json_(payload) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function assertToken_(token) {
-  const expected = PropertiesService.getScriptProperties().getProperty("TRACKER_API_TOKEN");
-  if (!expected || token !== expected) throw new Error("Unauthorized");
+// Accepts the website login (username + password) or the old API token.
+function assertAuth_(p) {
+  const props = PropertiesService.getScriptProperties();
+  const token = props.getProperty("TRACKER_API_TOKEN");
+  const user = props.getProperty("AUTH_USERNAME");
+  const pass = props.getProperty("AUTH_PASSWORD");
+  if (token && p && p.token === token) return;
+  if (user && pass && p && p.username === user && p.password === pass) return;
+  throw new Error("Unauthorized");
 }
 
 function tableToObjects_(sheet) {
@@ -33,16 +42,20 @@ function tableToObjects_(sheet) {
   });
 }
 
+function readAll_() {
+  const ss = SpreadsheetApp.getActive();
+  const out = {};
+  SHEETS.forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    out[name.toLowerCase()] = sheet ? tableToObjects_(sheet) : [];
+  });
+  return out;
+}
+
 function doGet(e) {
   try {
-    assertToken_(e.parameter.token);
-    const ss = SpreadsheetApp.getActive();
-    const out = {};
-    SHEETS.forEach(name => {
-      const sheet = ss.getSheetByName(name);
-      out[name.toLowerCase()] = sheet ? tableToObjects_(sheet) : [];
-    });
-    return json_(out);
+    assertAuth_(e.parameter);
+    return json_(readAll_());
   } catch (err) {
     return json_({ error: String(err && err.message ? err.message : err) });
   }
@@ -51,8 +64,13 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || "{}");
-    assertToken_(body.token);
+    assertAuth_(body);
     const ss = SpreadsheetApp.getActive();
+
+    // Read over POST so the password never goes in a URL.
+    if (body.action === "read") {
+      return json_(readAll_());
+    }
 
     if (body.action === "updateItem") {
       const sheet = ss.getSheetByName("Checklist");

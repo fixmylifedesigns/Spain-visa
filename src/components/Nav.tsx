@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Menu, X } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
+import { useAuth } from "./AuthGate";
 import { LangToggle, useLang } from "./Lang";
 
 export const NAV = [
@@ -19,6 +20,7 @@ export const NAV = [
 
 export default function Nav() {
   const { lang, t } = useLang();
+  const { logout } = useAuth();
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const active = (href: string) => (href === "/" ? path === "/" : path?.startsWith(href.replace(/\/$/, "")));
@@ -40,7 +42,12 @@ export default function Nav() {
             </Link>
           ))}
         </nav>
-        <div className="ml-auto lg:ml-2"><LangToggle /></div>
+        <div className="ml-auto flex items-center gap-2 lg:ml-2">
+          <LangToggle />
+          <button onClick={logout} aria-label={t({ en: "Log out", ja: "ログアウト" })} title={t({ en: "Log out", ja: "ログアウト" })} className="rounded border border-stone-300 bg-white p-1.5">
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
         <button className="rounded border border-stone-300 bg-white p-1.5 lg:hidden" aria-label="Menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           {open ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
         </button>
