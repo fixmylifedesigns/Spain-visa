@@ -9,7 +9,9 @@ import { PageHead } from "@/components/Page";
 const DATA_URL = "https://raw.githubusercontent.com/fixmylifedesigns/valencia-home/main/data/listings.json";
 const EDIT_URL = "https://github.com/fixmylifedesigns/valencia-home/edit/main/data/listings.json";
 const POLL_MS = 5 * 60 * 1000;
-const PLACES_TTL = 60 * 60 * 1000;
+const PLACES_TTL = 7 * 24 * 60 * 60 * 1000;
+// Pre-built by scripts/build-places.mjs in GitHub Actions, served with the site.
+const PLACES_CACHE_URL = (process.env.NEXT_PUBLIC_BASE_PATH || "") + "/data/places.json";
 
 type Listing = {
   id: string; area: string; district: string; street: string; price: number; size: number;
@@ -76,20 +78,44 @@ function geocode(f: Listing): Promise<Pt | null> {
   return geoQueue;
 }
 
-const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
+const OVERPASS = [
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
+];
+// Ask every mirror at once and take the first good answer.
 async function overpass(q: string) {
-  for (const url of OVERPASS) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 20000);
-    try {
-      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "data=" + encodeURIComponent(q), signal: ctrl.signal });
-      if (res.ok) return await res.json();
-    } catch {} finally { clearTimeout(timer); }
+  const ctrls = OVERPASS.map(() => new AbortController());
+  const timer = setTimeout(() => ctrls.forEach((c) => c.abort()), 20000);
+  try {
+    return await Promise.any(
+      OVERPASS.map(async (url, i) => {
+        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "data=" + encodeURIComponent(q), signal: ctrls[i].signal });
+        if (!res.ok) throw new Error(String(res.status));
+        const json = await res.json();
+        ctrls.forEach((c, j) => j !== i && c.abort());
+        return json;
+      })
+    );
+  } catch {
+    throw new Error("busy");
+  } finally {
+    clearTimeout(timer);
   }
-  throw new Error("busy");
 }
 
-async function fetchNearby(pt: Pt): Promise<Places> {
+let prebuilt: Promise<Record<string, Places & Pt>> | null = null;
+function loadPrebuilt() {
+  prebuilt ??= fetch(PLACES_CACHE_URL)
+    .then((r) => (r.ok ? r.json() : { places: {} }))
+    .then((j) => j.places || {})
+    .catch(() => ({}));
+  return prebuilt;
+}
+
+async function fetchNearby(pt: Pt, id: string): Promise<Places> {
+  const built = (await loadPrebuilt())[id];
+  if (built && metres(pt, built) < 100) return built;
   const key = `places:${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
   const hit = store.get<Places | null>(key, null);
   if (hit && Date.now() - hit.at < PLACES_TTL) return hit;
@@ -136,7 +162,7 @@ export default function Homes() {
   const [places, setPlaces] = useState<Record<string, PlaceState>>({});
   const [photo, setPhoto] = useState<Record<string, number>>({});
 
-  useEffect(() => { setLiked(store.get<string[]>("vlc-liked", [])); }, []);
+  useEffect(() => { setLiked(store.get<string[]>("vlc-liked", [])); loadPrebuilt(); }, []);
   useEffect(() => { store.set("vlc-liked", liked); }, [liked]);
 
   const load = useCallback(async () => {
@@ -156,17 +182,18 @@ export default function Homes() {
 
   useEffect(() => {
     if (!data) return;
-    data.listings.forEach((f) => {
-      if (f.lat && f.lng) { setCoords((c) => (c[f.id] ? c : { ...c, [f.id]: { lat: f.lat!, lng: f.lng! } })); return; }
+    loadPrebuilt().then((built) => data.listings.forEach((f) => {
+      const known = f.lat && f.lng ? { lat: f.lat, lng: f.lng } : built[f.id] ? { lat: built[f.id].lat, lng: built[f.id].lng } : null;
+      if (known) { setCoords((c) => (c[f.id] ? c : { ...c, [f.id]: known })); return; }
       geocode(f).then((pt) => pt && setCoords((c) => ({ ...c, [f.id]: pt })));
-    });
+    }));
   }, [data]);
 
   const loadNearby = async (f: Listing) => {
     setPlaces((p) => ({ ...p, [f.id]: { loading: true } }));
     const pt = coords[f.id] || (await geocode(f));
     if (!pt) { setPlaces((p) => ({ ...p, [f.id]: { error: "map" } })); return; }
-    try { const r = await fetchNearby(pt); setPlaces((p) => ({ ...p, [f.id]: r })); }
+    try { const r = await fetchNearby(pt, f.id); setPlaces((p) => ({ ...p, [f.id]: r })); }
     catch { setPlaces((p) => ({ ...p, [f.id]: { error: "busy" } })); }
   };
 
